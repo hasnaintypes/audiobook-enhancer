@@ -53,3 +53,33 @@ def test_stereo_input_raises():
     stereo = np.zeros((SAMPLE_RATE, 2), dtype=np.float32)
     with pytest.raises(ValueError):
         analyze_quality(stereo, SAMPLE_RATE)
+
+
+def test_quiet_signal_has_low_noise_floor():
+    rng = np.random.default_rng(0)
+    quiet_hiss = (rng.normal(0, 0.0005, SAMPLE_RATE)).astype(np.float32)
+    report = analyze_quality(quiet_hiss, SAMPLE_RATE)
+    assert report.noise_floor_db < -45.0
+
+
+def test_loud_hiss_raises_noise_floor():
+    rng = np.random.default_rng(0)
+    loud_hiss = (rng.normal(0, 0.05, SAMPLE_RATE)).astype(np.float32)
+    report = analyze_quality(loud_hiss, SAMPLE_RATE)
+    assert report.noise_floor_db > -45.0
+
+
+def test_consistent_loudness_is_not_flagged():
+    samples = _tone(9.0, amplitude=0.3)
+    report = analyze_quality(samples, SAMPLE_RATE)
+    assert not report.is_loudness_inconsistent
+    assert report.loudness_std_db < 1.0
+
+
+def test_volume_jump_between_sections_is_flagged():
+    quiet_section = _tone(4.5, amplitude=0.05)
+    loud_section = _tone(4.5, amplitude=0.5)
+    samples = np.concatenate([quiet_section, loud_section])
+    report = analyze_quality(samples, SAMPLE_RATE)
+    assert report.is_loudness_inconsistent
+    assert report.loudness_std_db > 6.0

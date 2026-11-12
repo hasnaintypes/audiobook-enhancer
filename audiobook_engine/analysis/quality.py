@@ -18,6 +18,9 @@ _CLIPPING_PEAK_THRESHOLD = 0.99
 _CLIPPING_MIN_FRACTION = 0.0001
 _SILENCE_RMS_THRESHOLD_DB = -45.0
 _FRAME_MS = 20
+_LOUDNESS_WINDOW_S = 3.0
+_NOISE_FLOOR_PERCENTILE = 50.0
+_INCONSISTENT_LOUDNESS_STD_DB = 6.0
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,9 @@ class QualityReport:
     silence_fraction: float
     speech_fraction: float
     duration_seconds: float
+    noise_floor_db: float
+    loudness_std_db: float
+    is_loudness_inconsistent: bool
 
 
 def _frame_signal(samples: np.ndarray, sample_rate: int, frame_ms: int) -> np.ndarray:
@@ -45,6 +51,37 @@ def _rms_db(frame: np.ndarray) -> float:
     if rms <= 1e-9:
         return -120.0
     return float(20 * np.log10(rms))
+
+
+def _estimate_noise_floor_db(frame_db: np.ndarray, silence_mask: np.ndarray) -> float:
+    """Median loudness of the quietest frames — a proxy for hiss/hum level,
+    distinct from true digital silence (which frame_db already excludes via
+    the -120dB floor only on fully-zero frames).
+    """
+    quiet_frames = frame_db[silence_mask]
+    if quiet_frames.size == 0:
+        # No silence detected at all (e.g. continuous loud narration) — fall
+        # back to the overall 10th percentile as the best available proxy.
+        quiet_frames = frame_db
+        return float(np.percentile(quiet_frames, 10))
+    return float(np.percentile(quiet_frames, _NOISE_FLOOR_PERCENTILE))
+
+
+def _loudness_consistency(
+    samples: np.ndarray, sample_rate: int, speech_mask_frame_ms: int
+) -> tuple[float, bool]:
+    """Std deviation of RMS loudness across multi-second windows, restricted
+    to windows that aren't mostly silence — flags volume jumps between
+    sections (e.g. a louder re-recorded chapter) rather than silence/speech
+    alternation, which would otherwise dominate the variance.
+    """
+    windows = _frame_signal(samples, sample_rate, int(_LOUDNESS_WINDOW_S * 1000))
+    window_db = np.array([_rms_db(w) for w in windows])
+    non_silent = window_db[window_db > _SILENCE_RMS_THRESHOLD_DB]
+    if non_silent.size < 2:
+        return 0.0, False
+    std_db = float(np.std(non_silent))
+    return std_db, std_db > _INCONSISTENT_LOUDNESS_STD_DB
 
 
 def analyze_quality(samples: np.ndarray, sample_rate: int) -> QualityReport:
@@ -72,6 +109,11 @@ def analyze_quality(samples: np.ndarray, sample_rate: int) -> QualityReport:
     silence_fraction = float(np.mean(silence_mask))
     speech_fraction = 1.0 - silence_fraction
 
+    noise_floor_db = _estimate_noise_floor_db(frame_db, silence_mask)
+    loudness_std_db, is_loudness_inconsistent = _loudness_consistency(
+        samples, sample_rate, _FRAME_MS
+    )
+
     return QualityReport(
         peak_amplitude=peak,
         rms_db=overall_rms_db,
@@ -80,4 +122,7 @@ def analyze_quality(samples: np.ndarray, sample_rate: int) -> QualityReport:
         silence_fraction=silence_fraction,
         speech_fraction=speech_fraction,
         duration_seconds=samples.size / sample_rate,
+        noise_floor_db=noise_floor_db,
+        loudness_std_db=loudness_std_db,
+        is_loudness_inconsistent=is_loudness_inconsistent,
     )
