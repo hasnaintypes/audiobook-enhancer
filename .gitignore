@@ -22,3 +22,6 @@ venv/
 
 # symlink to vault docs (source of truth lives in Obsidian, not here)
 docs
+.neon
+node_modules/
+.env.local
