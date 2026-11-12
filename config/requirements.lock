@@ -15,6 +15,9 @@ yt-dlp==2026.10.26
 soundfile==0.12.1
 boto3==1.35.68
 
-# Phase 3 — Tier 1 light-AI enhancement (DeepFilterNet2). Heavy dependency
-# (torch) — not required by tests/unit, only by real Colab runs.
-deepfilternet==0.5.6
+# Phase 3 — Tier 1 light-AI enhancement: RNNoise via ffmpeg's arnndn
+# filter (no Python package needed). DeepFilterNet2 was tried first but
+# its Rust-based deepfilterlib dependency has no prebuilt wheel for
+# Colab's Python 3.13 and failed to build from source (no Rust toolchain
+# present) — confirmed 2026-11-12. See
+# audiobook_engine/enhancement/rnnoise.py for details.
