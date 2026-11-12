@@ -55,6 +55,11 @@ def download_file(key: str, local_path: Path) -> None:
     client.download_file(BUCKET_NAME, key, str(local_path))
 
 
+def delete_file(key: str) -> None:
+    client = get_s3_client()
+    client.delete_object(Bucket=BUCKET_NAME, Key=key)
+
+
 def presigned_url(key: str, expires_in: int = 3600) -> str:
     client = get_s3_client()
     return client.generate_presigned_url(
