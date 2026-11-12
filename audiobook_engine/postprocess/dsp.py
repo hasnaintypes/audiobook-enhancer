@@ -85,6 +85,11 @@ def build_ffmpeg_command(
         str(input_path),
         "-af",
         ",".join(filter_chain),
+        # Without an explicit codec, ffmpeg picks a high-precision default
+        # (observed: 48kHz/stereo/64-bit float, ~8x the expected file size
+        # for 16-bit mono input) — pin to standard 16-bit PCM instead.
+        "-c:a",
+        "pcm_s16le",
         str(output_path),
     ]
 

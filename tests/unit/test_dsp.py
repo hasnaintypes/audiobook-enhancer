@@ -44,6 +44,14 @@ def test_ffmpeg_command_structure():
     assert command[-1] == str(Path("out.wav"))
 
 
+def test_ffmpeg_command_pins_16bit_pcm_output():
+    # Without this, ffmpeg defaults to a high-precision float codec —
+    # observed ~8x the expected file size for 16-bit mono input.
+    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True))
+    assert "-c:a" in command
+    assert command[command.index("-c:a") + 1] == "pcm_s16le"
+
+
 def test_ffmpeg_command_declip_affects_filter_arg():
     with_declip = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True))
     without_declip = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(False))
