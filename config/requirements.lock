@@ -1,6 +1,11 @@
 # Pinned dependencies for reproducible Colab sessions.
-# Populate with exact versions (==) once Phase 1 selects real libraries
-# (yt-dlp, ffmpeg-python, deepfilternet, etc.) — do not use unpinned
-# "latest" versions, since Colab's preinstalled environment drifts
-# independently of this repo.
+# Populate with exact versions (==) once later phases select real libraries
+# (deepfilternet, etc.) — do not use unpinned "latest" versions, since
+# Colab's preinstalled environment drifts independently of this repo.
 pytest==8.3.3
+numpy==2.1.3
+
+# Phase 1 — ingestion + analysis (network/ffmpeg/audio-file dependent;
+# not required by tests/unit, only by real Colab runs)
+yt-dlp==2024.11.18
+soundfile==0.12.1

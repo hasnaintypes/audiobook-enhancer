@@ -3,7 +3,9 @@ name = "audiobook-engine"
 version = "0.0.0"
 description = "Tiered DSP/AI enhancement pipeline for long-form narration, preserving narrator voice identity."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "numpy>=2.0",
+]
 
 [project.optional-dependencies]
 dev = [
