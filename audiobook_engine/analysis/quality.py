@@ -22,6 +22,37 @@ _LOUDNESS_WINDOW_S = 3.0
 _NOISE_FLOOR_PERCENTILE = 50.0
 _INCONSISTENT_LOUDNESS_STD_DB = 6.0
 
+# Spectral detectors (background music / reverb / lossy-compression cutoff)
+# need wider frames than the 20ms loudness frames above for usable frequency
+# resolution. Also unvalidated against real samples — see module docstring.
+_SPECTRAL_FRAME_MS = 40.0
+
+# "Background music under narration" shows up as tonal (low spectral-
+# flatness) energy in frames that are quiet enough to be a narration pause
+# but not quiet enough to be true digital silence — pure hiss/hum in that
+# same quiet band is broadband (flatness near 1), a music bed is peaky
+# (flatness well below 1).
+_MUSIC_QUIET_RMS_LOW_DB = _SILENCE_RMS_THRESHOLD_DB
+_MUSIC_QUIET_RMS_HIGH_DB = -25.0
+_MUSIC_FLATNESS_THRESHOLD = 0.35
+_MUSIC_MIN_QUIET_FRAMES = 5
+
+# Reverb/echo: after a sharp energy drop ("offset"), a dry recording falls
+# straight to the noise floor; a reverberant one keeps audible energy above
+# the floor for a while longer. Looks at how much of the window right after
+# each offset still sits above floor+margin.
+_REVERB_OFFSET_DROP_DB = 15.0
+_REVERB_TAIL_WINDOW_MS = 300.0
+_REVERB_TAIL_RATIO_THRESHOLD = 0.4
+_REVERB_MIN_OFFSETS = 3
+_REVERB_FLOOR_MARGIN_DB = 6.0
+
+# Lossy-compression artifacts: a hard spectral cutoff well below Nyquist
+# (rather than a gradual natural roll-off) is consistent with audio that was
+# encoded at a low bitrate (e.g. mp3) and later upsampled/re-encoded losslessly.
+_COMPRESSION_ROLLOFF_DB = -50.0
+_COMPRESSION_CUTOFF_RATIO_THRESHOLD = 0.75
+
 
 @dataclass(frozen=True)
 class QualityReport:
@@ -35,6 +66,12 @@ class QualityReport:
     noise_floor_db: float
     loudness_std_db: float
     is_loudness_inconsistent: bool
+    has_background_music: bool
+    background_music_confidence: float
+    has_reverb: bool
+    reverb_tail_score: float
+    has_compression_artifacts: bool
+    spectral_cutoff_hz: float
 
 
 def _frame_signal(samples: np.ndarray, sample_rate: int, frame_ms: int) -> np.ndarray:
@@ -84,6 +121,85 @@ def _loudness_consistency(
     return std_db, std_db > _INCONSISTENT_LOUDNESS_STD_DB
 
 
+def _spectral_flatness(frame: np.ndarray) -> float:
+    """Geometric mean / arithmetic mean of the power spectrum ("Wiener
+    entropy"). Near 1.0 for broadband noise, well below 1.0 for tonal
+    content (music, hum) — the ratio a flat spectrum vs. a peaky one.
+    """
+    if frame.size < 2:
+        return 1.0
+    window = np.hanning(frame.size)
+    spectrum = np.abs(np.fft.rfft(frame * window))
+    spectrum = spectrum[spectrum > 1e-12]
+    if spectrum.size == 0:
+        return 1.0
+    geometric_mean = np.exp(np.mean(np.log(spectrum)))
+    arithmetic_mean = np.mean(spectrum)
+    if arithmetic_mean <= 1e-12:
+        return 1.0
+    return float(geometric_mean / arithmetic_mean)
+
+
+def _detect_background_music(samples: np.ndarray, sample_rate: int) -> tuple[bool, float]:
+    frames = _frame_signal(samples, sample_rate, int(_SPECTRAL_FRAME_MS))
+    frame_db = np.array([_rms_db(f) for f in frames])
+    quiet_mask = (frame_db >= _MUSIC_QUIET_RMS_LOW_DB) & (frame_db <= _MUSIC_QUIET_RMS_HIGH_DB)
+    quiet_frames = frames[quiet_mask]
+    if quiet_frames.shape[0] < _MUSIC_MIN_QUIET_FRAMES:
+        # Not enough narration-pause frames to judge — report "no music"
+        # rather than guessing from too little evidence.
+        return False, 1.0
+    flatness = np.array([_spectral_flatness(f) for f in quiet_frames])
+    mean_flatness = float(np.mean(flatness))
+    return mean_flatness < _MUSIC_FLATNESS_THRESHOLD, mean_flatness
+
+
+def _detect_reverb(frame_db: np.ndarray, frame_ms: float, noise_floor_db: float) -> tuple[bool, float]:
+    frames_per_window = max(1, int(_REVERB_TAIL_WINDOW_MS / frame_ms))
+    drop = frame_db[:-1] - frame_db[1:]
+    offset_indices = np.nonzero(drop > _REVERB_OFFSET_DROP_DB)[0] + 1
+    if offset_indices.size < _REVERB_MIN_OFFSETS:
+        return False, 0.0
+
+    floor_margin_db = noise_floor_db + _REVERB_FLOOR_MARGIN_DB
+    tail_ratios = []
+    for idx in offset_indices:
+        tail = frame_db[idx : idx + frames_per_window]
+        if tail.size == 0:
+            continue
+        tail_ratios.append(float(np.mean(tail > floor_margin_db)))
+
+    if not tail_ratios:
+        return False, 0.0
+    mean_ratio = float(np.mean(tail_ratios))
+    return mean_ratio > _REVERB_TAIL_RATIO_THRESHOLD, mean_ratio
+
+
+def _detect_compression_artifacts(samples: np.ndarray, sample_rate: int) -> tuple[bool, float]:
+    frames = _frame_signal(samples, sample_rate, int(_SPECTRAL_FRAME_MS))
+    if frames.shape[1] < 2:
+        return False, 0.0
+
+    window = np.hanning(frames.shape[1])
+    spectra = np.abs(np.fft.rfft(frames * window, axis=1))
+    power = np.mean(np.square(spectra), axis=0)
+    freqs = np.fft.rfftfreq(frames.shape[1], d=1.0 / sample_rate)
+
+    power_db = 10 * np.log10(power + 1e-12)
+    peak_db = np.max(power_db)
+    above_floor = (power_db - peak_db) > _COMPRESSION_ROLLOFF_DB
+    if not np.any(above_floor):
+        return False, 0.0
+
+    cutoff_idx = int(np.max(np.nonzero(above_floor)[0]))
+    cutoff_hz = float(freqs[cutoff_idx])
+    nyquist = sample_rate / 2.0
+    if nyquist <= 0:
+        return False, cutoff_hz
+    cutoff_ratio = cutoff_hz / nyquist
+    return cutoff_ratio < _COMPRESSION_CUTOFF_RATIO_THRESHOLD, cutoff_hz
+
+
 def analyze_quality(samples: np.ndarray, sample_rate: int) -> QualityReport:
     """Compute basic quality signals for a mono float32 waveform in [-1, 1].
 
@@ -114,6 +230,14 @@ def analyze_quality(samples: np.ndarray, sample_rate: int) -> QualityReport:
         samples, sample_rate, _FRAME_MS
     )
 
+    has_background_music, background_music_confidence = _detect_background_music(
+        samples, sample_rate
+    )
+    has_reverb, reverb_tail_score = _detect_reverb(frame_db, _FRAME_MS, noise_floor_db)
+    has_compression_artifacts, spectral_cutoff_hz = _detect_compression_artifacts(
+        samples, sample_rate
+    )
+
     return QualityReport(
         peak_amplitude=peak,
         rms_db=overall_rms_db,
@@ -125,4 +249,10 @@ def analyze_quality(samples: np.ndarray, sample_rate: int) -> QualityReport:
         noise_floor_db=noise_floor_db,
         loudness_std_db=loudness_std_db,
         is_loudness_inconsistent=is_loudness_inconsistent,
+        has_background_music=has_background_music,
+        background_music_confidence=background_music_confidence,
+        has_reverb=has_reverb,
+        reverb_tail_score=reverb_tail_score,
+        has_compression_artifacts=has_compression_artifacts,
+        spectral_cutoff_hz=spectral_cutoff_hz,
     )
