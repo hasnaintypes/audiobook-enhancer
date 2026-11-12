@@ -70,9 +70,14 @@ def build_filter_chain(decision: StrategyDecision) -> list[str]:
 
 
 def build_ffmpeg_command(
-    input_path: Path, output_path: Path, decision: StrategyDecision
+    input_path: Path, output_path: Path, decision: StrategyDecision, sample_rate: int
 ) -> list[str]:
     """Build the full ffmpeg argv for applying Tier 0 DSP processing.
+
+    sample_rate must be the INPUT's actual sample rate (e.g. from the same
+    load_mono() call used for analysis) — without pinning -ar explicitly,
+    the filter chain was observed silently resampling the output to ~4x
+    the input rate (confirmed on Colab: 48kHz in -> ~192kHz out).
 
     Pure function (no execution) — see run_tier0_processing for the part
     that actually shells out.
@@ -85,9 +90,10 @@ def build_ffmpeg_command(
         str(input_path),
         "-af",
         ",".join(filter_chain),
-        # Without an explicit codec, ffmpeg picks a high-precision default
-        # (observed: 48kHz/stereo/64-bit float, ~8x the expected file size
-        # for 16-bit mono input) — pin to standard 16-bit PCM instead.
+        # Pin both explicitly: -c:a alone was NOT enough to stop the
+        # filter chain's sample-rate drift observed above.
+        "-ar",
+        str(sample_rate),
         "-c:a",
         "pcm_s16le",
         str(output_path),
@@ -95,10 +101,10 @@ def build_ffmpeg_command(
 
 
 def run_tier0_processing(
-    input_path: Path, output_path: Path, decision: StrategyDecision
+    input_path: Path, output_path: Path, decision: StrategyDecision, sample_rate: int
 ) -> None:
     """Run the Tier 0 DSP chain via ffmpeg. Requires ffmpeg on PATH — run in
     Colab, not as part of the unit test suite.
     """
-    command = build_ffmpeg_command(input_path, output_path, decision)
+    command = build_ffmpeg_command(input_path, output_path, decision, sample_rate)
     subprocess.run(command, check=True, capture_output=True, text=True)
