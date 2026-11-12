@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# audio artifacts — never commit media
+*.wav
+*.mp3
+*.flac
+*.m4a
+
+# local job/cache state
+.job_store/
+.model_cache/
+
+.env
+.DS_Store

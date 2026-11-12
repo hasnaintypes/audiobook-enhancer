@@ -1,0 +1,21 @@
+[project]
+name = "audiobook-engine"
+version = "0.0.0"
+description = "Tiered DSP/AI enhancement pipeline for long-form narration, preserving narrator voice identity."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["audiobook_engine*", "api*"]

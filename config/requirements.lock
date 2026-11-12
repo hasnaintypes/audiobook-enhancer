@@ -1,0 +1,6 @@
+# Pinned dependencies for reproducible Colab sessions.
+# Populate with exact versions (==) once Phase 1 selects real libraries
+# (yt-dlp, ffmpeg-python, deepfilternet, etc.) — do not use unpinned
+# "latest" versions, since Colab's preinstalled environment drifts
+# independently of this repo.
+pytest==8.3.3

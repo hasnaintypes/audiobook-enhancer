@@ -1,0 +1,14 @@
+# Enhancement presets. Placeholder — real parameters land in Phase 2/3
+# once DSP and enhancement-tier modules exist. See 03-Tech-Stack.md in
+# the vault for the tiering rationale (Tier 0 DSP / Tier 1 light AI /
+# Tier 2 opt-in heavy AI).
+
+gentle:
+  tier_max: 0
+
+balanced:
+  tier_max: 1
+
+strong:
+  tier_max: 2
+  # Tier 2 is opt-in only per 07-Decisions.md — never selected by default.
