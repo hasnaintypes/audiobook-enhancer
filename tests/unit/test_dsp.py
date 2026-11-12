@@ -1,7 +1,11 @@
 from pathlib import Path
 
 from audiobook_engine.analysis.strategy import EnhancementTier, StrategyDecision
-from audiobook_engine.postprocess.dsp import build_filter_chain, build_ffmpeg_command
+from audiobook_engine.postprocess.dsp import (
+    build_filter_chain,
+    build_ffmpeg_command,
+    build_resample_command,
+)
 
 SAMPLE_RATE = 48_000
 
@@ -38,7 +42,7 @@ def test_silence_trim_only_targets_leading_trailing():
 
 def test_ffmpeg_command_structure():
     decision = _decision(needs_declipping=True)
-    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), decision, SAMPLE_RATE)
+    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), decision)
     assert command[0] == "ffmpeg"
     assert "-i" in command
     assert str(Path("in.wav")) in command
@@ -49,22 +53,29 @@ def test_ffmpeg_command_structure():
 def test_ffmpeg_command_pins_16bit_pcm_output():
     # Without this, ffmpeg defaults to a high-precision float codec —
     # observed ~8x the expected file size for 16-bit mono input.
-    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True), SAMPLE_RATE)
+    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True))
     assert "-c:a" in command
     assert command[command.index("-c:a") + 1] == "pcm_s16le"
 
 
-def test_ffmpeg_command_pins_sample_rate():
-    # -c:a alone was NOT enough — the filter chain was observed silently
-    # resampling output to ~4x the input rate without an explicit -ar.
-    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True), SAMPLE_RATE)
+def test_ffmpeg_command_has_no_ar_flag():
+    # Pinning -ar in the SAME invocation as this filter chain was observed
+    # to hang indefinitely at end-of-stream on some inputs — rate pinning
+    # is deliberately a separate pass (build_resample_command).
+    command = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True))
+    assert "-ar" not in command
+
+
+def test_resample_command_pins_sample_rate():
+    command = build_resample_command(Path("in.wav"), Path("out.wav"), SAMPLE_RATE)
     assert "-ar" in command
     assert command[command.index("-ar") + 1] == str(SAMPLE_RATE)
+    assert command[command.index("-c:a") + 1] == "pcm_s16le"
 
 
 def test_ffmpeg_command_declip_affects_filter_arg():
-    with_declip = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True), SAMPLE_RATE)
-    without_declip = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(False), SAMPLE_RATE)
+    with_declip = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(True))
+    without_declip = build_ffmpeg_command(Path("in.wav"), Path("out.wav"), _decision(False))
     filter_arg_index = with_declip.index("-af") + 1
     assert "adeclip" in with_declip[filter_arg_index]
     assert "adeclip" not in without_declip[filter_arg_index]
