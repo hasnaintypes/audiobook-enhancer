@@ -55,6 +55,31 @@ def select_strategy(report: QualityReport) -> StrategyDecision:
             f"loudness varies by {report.loudness_std_db:.1f}dB across sections"
         )
 
+    # These three are detected but not actionable yet — there's no
+    # music-separation, dereverb, or spectral-restoration stage in the
+    # pipeline, so they're surfaced for visibility (and to explain a
+    # recording that still sounds bad despite a clean tier decision)
+    # rather than used to pick a tier.
+    if report.has_background_music:
+        reasons.append(
+            f"background music detected under narration (spectral flatness "
+            f"{report.background_music_confidence:.2f}) — no music-separation "
+            f"stage exists yet, flagged for visibility only"
+        )
+
+    if report.has_reverb:
+        reasons.append(
+            f"reverb/echo detected (tail persistence {report.reverb_tail_score:.2f}) "
+            f"— no dereverb stage exists yet, flagged for visibility only"
+        )
+
+    if report.has_compression_artifacts:
+        reasons.append(
+            f"lossy-compression artifacts detected (spectral cutoff "
+            f"~{report.spectral_cutoff_hz:.0f}Hz) — lost high frequencies "
+            f"can't be recovered, flagged for visibility only"
+        )
+
     if not reasons:
         reasons.append("no significant quality issues detected")
 
