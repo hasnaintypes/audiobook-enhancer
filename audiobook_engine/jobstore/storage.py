@@ -35,13 +35,20 @@ def object_key(job_id: str, kind: str, filename: str) -> str:
 def get_s3_client():
     """Return a boto3 S3 client configured for Neon Object Storage.
 
-    Path-style addressing is required by Neon (see neon-object-storage
-    skill) — the AWS SDK default (virtual-hosted-style) will NOT work.
+    Path-style addressing AND SigV4 are both required by Neon (see
+    neon-object-storage skill: "Path-style addressing and SigV4 only").
+    Without pinning signature_version explicitly, boto3 generated SigV2-
+    style presigned URLs (AWSAccessKeyId/Signature/Expires params) that
+    Neon rejected with AccessDenied — confirmed by an actual failed
+    download, not just a theoretical mismatch.
     """
     import boto3
     from botocore.config import Config
 
-    return boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
+    return boto3.client(
+        "s3",
+        config=Config(s3={"addressing_style": "path"}, signature_version="s3v4"),
+    )
 
 
 def upload_file(local_path: Path, key: str) -> None:
