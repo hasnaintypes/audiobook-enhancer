@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from audiobook_engine.analysis.framing import frame_signal as _frame_signal
+from audiobook_engine.analysis.framing import rms_db as _rms_db
+
 # Thresholds below are starting points, not calibrated against real audiobook
 # samples yet — see docs/01-PRD.md Open Assumptions. Expect to tune these
 # once Phase 1's real-sample experiment runs.
@@ -72,22 +75,6 @@ class QualityReport:
     reverb_tail_score: float
     has_compression_artifacts: bool
     spectral_cutoff_hz: float
-
-
-def _frame_signal(samples: np.ndarray, sample_rate: int, frame_ms: int) -> np.ndarray:
-    frame_len = max(1, int(sample_rate * frame_ms / 1000))
-    n_frames = len(samples) // frame_len
-    if n_frames == 0:
-        return samples.reshape(1, -1)
-    trimmed = samples[: n_frames * frame_len]
-    return trimmed.reshape(n_frames, frame_len)
-
-
-def _rms_db(frame: np.ndarray) -> float:
-    rms = np.sqrt(np.mean(np.square(frame))) if frame.size else 0.0
-    if rms <= 1e-9:
-        return -120.0
-    return float(20 * np.log10(rms))
 
 
 def _estimate_noise_floor_db(frame_db: np.ndarray, silence_mask: np.ndarray) -> float:
