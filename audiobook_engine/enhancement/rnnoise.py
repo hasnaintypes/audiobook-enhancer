@@ -14,6 +14,15 @@ Model file: ffmpeg's arnndn filter requires an explicit .rnnn model path
 community model (richardpl/arnndn-models, "std.rnnn" — a general-purpose
 model, not tuned for Urdu specifically; same unverified-for-this-language
 caveat as every other model choice in this project).
+
+This module's -ar flag combines the arnndn filter and sample-rate pinning
+in a single ffmpeg call — the same pattern that hung Tier 0's DSP chain
+indefinitely on a 120s clip (see postprocess/dsp.py). Stress-tested on a
+real 10-minute clip on Colab: completed in 4.9s with no hang, so the
+single-pass call is left as-is rather than preemptively splitting it.
+If a hang is ever observed here on real data, apply the same two-pass
+split dsp.py uses (filter pass without -ar, then a separate resample
+pass).
 """
 
 from __future__ import annotations
