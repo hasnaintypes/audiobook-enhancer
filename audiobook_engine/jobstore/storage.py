@@ -12,7 +12,11 @@ key-naming logic is kept in pure functions below so that part IS testable.
 
 from __future__ import annotations
 
+import json
+import tempfile
 from pathlib import Path
+
+from audiobook_engine.chunking.manifest import ChunkManifest, manifest_from_dict, manifest_to_dict
 
 BUCKET_NAME = "audiobooks"
 
@@ -20,13 +24,13 @@ BUCKET_NAME = "audiobooks"
 def object_key(job_id: str, kind: str, filename: str) -> str:
     """Build a consistent storage key for an artifact belonging to a job.
 
-    kind is one of: "original", "chunks", "enhanced", "music_mixed".
-    Keeping this as a pure function makes the naming convention testable
-    without any network access.
+    kind is one of: "original", "chunks", "enhanced", "music_mixed",
+    "manifest". Keeping this as a pure function makes the naming convention
+    testable without any network access.
     """
     if not job_id or "/" in job_id:
         raise ValueError(f"Invalid job_id: {job_id!r}")
-    allowed_kinds = {"original", "chunks", "enhanced", "music_mixed"}
+    allowed_kinds = {"original", "chunks", "enhanced", "music_mixed", "manifest"}
     if kind not in allowed_kinds:
         raise ValueError(f"Unknown artifact kind: {kind!r}, expected one of {allowed_kinds}")
     return f"jobs/{job_id}/{kind}/{filename}"
@@ -74,3 +78,36 @@ def presigned_url(key: str, expires_in: int = 3600) -> str:
         Params={"Bucket": BUCKET_NAME, "Key": key},
         ExpiresIn=expires_in,
     )
+
+
+def upload_manifest(manifest: ChunkManifest) -> None:
+    """Serialize and upload a job's chunk-completion manifest as
+    jobs/<job_id>/manifest/chunks.json — the interim per-chunk bookkeeping
+    docs/07-Decisions.md D007 defers a real Postgres schema for until
+    Phase 6 (see chunking/manifest.py's module docstring).
+    """
+    key = object_key(manifest.job_id, "manifest", "chunks.json")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(manifest_to_dict(manifest), f)
+        temp_path = Path(f.name)
+    try:
+        upload_file(temp_path, key)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def download_manifest(job_id: str) -> ChunkManifest:
+    """Download and parse a job's chunk-completion manifest. Raises
+    ValueError (via manifest_from_dict) if the manifest is missing expected
+    keys or malformed — e.g. from a mid-write interruption.
+    """
+    key = object_key(job_id, "manifest", "chunks.json")
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        temp_path = Path(f.name)
+    try:
+        download_file(key, temp_path)
+        with open(temp_path) as fh:
+            data = json.load(fh)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return manifest_from_dict(data)

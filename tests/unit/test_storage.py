@@ -21,3 +21,8 @@ def test_object_key_rejects_job_id_with_slash():
 def test_object_key_rejects_empty_job_id():
     with pytest.raises(ValueError):
         object_key("", "original", "source.wav")
+
+
+def test_object_key_accepts_manifest_kind():
+    key = object_key("job-123", "manifest", "chunks.json")
+    assert key == "jobs/job-123/manifest/chunks.json"
