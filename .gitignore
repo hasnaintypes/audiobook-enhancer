@@ -25,3 +25,7 @@ docs
 .neon
 node_modules/
 .env.local
+
+# local working-session gap tracker — not checked in, regenerate/update
+# per session instead of treating it as project history
+gap.md
