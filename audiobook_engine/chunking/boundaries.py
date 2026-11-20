@@ -50,6 +50,30 @@ class ChunkBoundary:
     cut_reason: str  # "silence_gap" | "max_duration_fallback" | "end_of_audio"
 
 
+def estimate_adaptive_silence_threshold_db(
+    samples: np.ndarray,
+    sample_rate: int,
+    frame_ms: float = _DEFAULT_FRAME_MS,
+    percentile: float = 15.0,
+) -> float:
+    """Estimate a per-sample silence threshold from this sample's own
+    frame-level RMS distribution, instead of assuming one fixed dB value
+    works across recordings with different ambient noise floors.
+
+    Confirmed necessary on real samples (gap.md evidence, 2026-11-20): a
+    70-minute lecture recording's ambient noise floor sits far above a quiet
+    studio narration's, so a single global threshold (e.g. -45dB) found
+    almost no silence gaps at all on the lecture — 7 of 8 chunk boundaries
+    fell back to a hard mid-audio cut. This computes directly from the raw
+    frame-RMS distribution with NO pre-filtering by any fixed constant
+    (unlike analysis/quality.py's noise_floor_db, which filters frames by
+    its own fixed -45dB threshold first — circular for this exact problem).
+    """
+    frames = frame_signal(samples, sample_rate, frame_ms)
+    frame_db = np.array([rms_db(f) for f in frames])
+    return float(np.percentile(frame_db, percentile))
+
+
 def find_silence_gaps(
     samples: np.ndarray, sample_rate: int, config: ChunkingConfig
 ) -> list[tuple[float, float]]:

@@ -1,7 +1,13 @@
 import numpy as np
 import pytest
 
-from audiobook_engine.chunking.boundaries import ChunkingConfig, find_silence_gaps, plan_chunks
+from audiobook_engine.analysis.framing import frame_signal, rms_db
+from audiobook_engine.chunking.boundaries import (
+    ChunkingConfig,
+    estimate_adaptive_silence_threshold_db,
+    find_silence_gaps,
+    plan_chunks,
+)
 
 SAMPLE_RATE = 16_000
 
@@ -107,3 +113,41 @@ def test_plan_chunks_returns_single_chunk_for_short_nonempty_audio():
     assert boundaries[0].cut_reason == "end_of_audio"
     assert boundaries[0].start_s == 0.0
     assert boundaries[0].end_s == pytest.approx(1.0, abs=1e-6)
+
+
+def test_estimate_adaptive_silence_threshold_db_within_frame_range():
+    word = _tone(2.0, 0.5)
+    pause = _silence(1.0)
+    signal = np.concatenate([word, pause, word])
+
+    threshold = estimate_adaptive_silence_threshold_db(signal, SAMPLE_RATE)
+
+    frames = frame_signal(signal, SAMPLE_RATE, 20.0)
+    frame_db = np.array([rms_db(f) for f in frames])
+    assert frame_db.min() <= threshold <= frame_db.max()
+
+
+def test_estimate_adaptive_silence_threshold_db_is_monotonic_in_percentile():
+    word = _tone(2.0, 0.5)
+    pause = _silence(1.0)
+    signal = np.concatenate([word, pause, word])
+
+    low = estimate_adaptive_silence_threshold_db(signal, SAMPLE_RATE, percentile=10.0)
+    high = estimate_adaptive_silence_threshold_db(signal, SAMPLE_RATE, percentile=90.0)
+
+    assert low <= high
+
+
+def test_estimate_adaptive_silence_threshold_db_matches_independent_percentile():
+    word = _tone(3.0, 0.5)
+    pause = _silence(1.5)
+    signal = np.concatenate([word, pause])
+    frame_ms = 20.0
+
+    result = estimate_adaptive_silence_threshold_db(
+        signal, SAMPLE_RATE, frame_ms=frame_ms, percentile=25.0
+    )
+
+    frames = frame_signal(signal, SAMPLE_RATE, frame_ms)
+    expected = np.percentile(np.array([rms_db(f) for f in frames]), 25.0)
+    assert result == pytest.approx(expected)
