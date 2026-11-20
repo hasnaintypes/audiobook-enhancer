@@ -81,8 +81,15 @@ def run_job(
     work_dir: Path,
     chunking_config: ChunkingConfig = ChunkingConfig(),
     model_path: Path | None = None,
+    force_tier2: bool = False,
 ) -> ChunkManifest:
     """Run (or resume) a chunked enhancement job end-to-end.
+
+    force_tier2=True routes every chunk through Tier 2 (Resemble Enhance)
+    regardless of what select_strategy decides — this is the explicit,
+    human-driven opt-in Tier 2 requires (analysis/strategy.py never assigns
+    Tier 2 on its own). Also requires a CUDA GPU and the resemble-enhance
+    package.
 
     Requires ffmpeg on PATH and network access to Neon Object Storage — run
     in Colab, not as part of the unit test suite.
@@ -94,6 +101,7 @@ def run_job(
 
     from audiobook_engine.analysis.io import load_mono
     from audiobook_engine.chunking.boundaries import estimate_adaptive_silence_threshold_db
+    from audiobook_engine.enhancement.resemble import run_tier2_processing
     from audiobook_engine.enhancement.rnnoise import download_default_model, run_tier1_processing
     from audiobook_engine.jobstore.storage import (
         download_manifest,
@@ -142,7 +150,11 @@ def run_job(
         decision = select_strategy(report)
 
         processed_path = work_dir / chunk_filename(idx)
-        if decision.tier is EnhancementTier.TIER_1_LIGHT_AI:
+        effective_tier = EnhancementTier.TIER_2_GPU_HEAVY if force_tier2 else decision.tier
+
+        if effective_tier is EnhancementTier.TIER_2_GPU_HEAVY:
+            run_tier2_processing(input_chunk_path, processed_path, sample_rate)
+        elif effective_tier is EnhancementTier.TIER_1_LIGHT_AI:
             if resolved_model_path is None:
                 resolved_model_path = download_default_model(work_dir / "models" / "std.rnnn")
             run_tier1_processing(input_chunk_path, processed_path, resolved_model_path, sample_rate)
