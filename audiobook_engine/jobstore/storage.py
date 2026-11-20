@@ -4,7 +4,7 @@ S3-compatible Object Storage (see neon.ts, bucket "audiobooks").
 Reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_ENDPOINT_URL_S3 /
 AWS_REGION from the environment (populated by `neon deploy`/`neon env pull`
 into .env.local, or injected directly in Colab — see
-notebooks/bootstrap_and_validation.ipynb). Never hardcode credentials here.
+notebooks/audiobook_enhancer_notebook.ipynb). Never hardcode credentials here.
 
 This module does real network I/O and is not covered by tests/unit;
 key-naming logic is kept in pure functions below so that part IS testable.
