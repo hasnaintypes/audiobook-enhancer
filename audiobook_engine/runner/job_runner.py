@@ -82,19 +82,25 @@ def run_job(
     chunking_config: ChunkingConfig = ChunkingConfig(),
     model_path: Path | None = None,
     force_tier2: bool = False,
+    tier2_venv_python: Path | None = None,
 ) -> ChunkManifest:
     """Run (or resume) a chunked enhancement job end-to-end.
 
     force_tier2=True routes every chunk through Tier 2 (Resemble Enhance)
     regardless of what select_strategy decides — this is the explicit,
     human-driven opt-in Tier 2 requires (analysis/strategy.py never assigns
-    Tier 2 on its own). Also requires a CUDA GPU and the resemble-enhance
-    package.
+    Tier 2 on its own). Resemble Enhance only runs inside its own isolated
+    legacy venv (enhancement/resemble.py's ensure_resemble_enhance_env), so
+    force_tier2=True requires tier2_venv_python to already point at that
+    venv's python binary.
 
     Requires ffmpeg on PATH and network access to Neon Object Storage — run
     in Colab, not as part of the unit test suite.
     """
     import dataclasses
+
+    if force_tier2 and tier2_venv_python is None:
+        raise ValueError("force_tier2=True requires tier2_venv_python")
 
     import soundfile as sf
     from botocore.exceptions import ClientError
@@ -153,7 +159,9 @@ def run_job(
         effective_tier = EnhancementTier.TIER_2_GPU_HEAVY if force_tier2 else decision.tier
 
         if effective_tier is EnhancementTier.TIER_2_GPU_HEAVY:
-            run_tier2_processing(input_chunk_path, processed_path, sample_rate)
+            run_tier2_processing(
+                input_chunk_path, processed_path, sample_rate, venv_python=tier2_venv_python
+            )
         elif effective_tier is EnhancementTier.TIER_1_LIGHT_AI:
             if resolved_model_path is None:
                 resolved_model_path = download_default_model(work_dir / "models" / "std.rnnn")
