@@ -24,6 +24,7 @@ _NOISY_FLOOR_DB_THRESHOLD = -50.0
 class EnhancementTier(IntEnum):
     TIER_0_DSP_ONLY = 0
     TIER_1_LIGHT_AI = 1
+    TIER_2_GPU_HEAVY = 2
 
 
 @dataclass(frozen=True)
