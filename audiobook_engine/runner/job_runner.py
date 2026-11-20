@@ -87,10 +87,13 @@ def run_job(
     Requires ffmpeg on PATH and network access to Neon Object Storage — run
     in Colab, not as part of the unit test suite.
     """
+    import dataclasses
+
     import soundfile as sf
     from botocore.exceptions import ClientError
 
     from audiobook_engine.analysis.io import load_mono
+    from audiobook_engine.chunking.boundaries import estimate_adaptive_silence_threshold_db
     from audiobook_engine.enhancement.rnnoise import download_default_model, run_tier1_processing
     from audiobook_engine.jobstore.storage import (
         download_manifest,
@@ -103,7 +106,19 @@ def run_job(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     samples, sample_rate = load_mono(input_audio_path)
-    boundaries = plan_chunks(samples, sample_rate, chunking_config)
+
+    # A single global silence_rms_threshold_db can't work across recordings
+    # with different ambient noise floors (confirmed on real samples — see
+    # gap.md evidence, 2026-11-20: a lecture recording's higher noise floor
+    # made the old fixed default find almost no silence gaps at all). Derive
+    # it from this sample's own frame-RMS distribution instead.
+    adaptive_threshold_db = estimate_adaptive_silence_threshold_db(
+        samples, sample_rate, frame_ms=chunking_config.frame_ms
+    )
+    effective_chunking_config = dataclasses.replace(
+        chunking_config, silence_rms_threshold_db=adaptive_threshold_db
+    )
+    boundaries = plan_chunks(samples, sample_rate, effective_chunking_config)
 
     try:
         existing = download_manifest(job_id)
