@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Job, type JobSubmitRequest, type PreviewRequest } from "@/lib/api";
+import { api, type Job, type JobStatus, type JobSubmitRequest, type PreviewRequest } from "@/lib/api";
 
 const jobKeys = {
   all: ["jobs"] as const,
   detail: (id: string) => ["jobs", id] as const,
+  artifacts: (id: string) => ["jobs", id, "artifacts"] as const,
 };
+
+const TERMINAL_STATUSES: JobStatus[] = ["succeeded", "failed", "cancelled"];
 
 export function useJob(jobId: string | undefined) {
   return useQuery({
@@ -36,6 +39,16 @@ export function useCancelJob() {
     onSuccess: (job: Job) => {
       queryClient.setQueryData(jobKeys.detail(job.id), job);
     },
+  });
+}
+
+export function useJobArtifacts(jobId: string | undefined, status: JobStatus | undefined) {
+  return useQuery({
+    queryKey: jobKeys.artifacts(jobId ?? ""),
+    queryFn: () => api.getJobArtifacts(jobId as string),
+    // Only worth asking once the job has actually finished -- matches
+    // useJob's own refetchInterval logic for when polling is worthwhile.
+    enabled: !!jobId && !!status && TERMINAL_STATUSES.includes(status),
   });
 }
 

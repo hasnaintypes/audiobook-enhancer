@@ -7,6 +7,14 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+// api/auth.py requires a Bearer token on every route. Baking it into a
+// client-visible NEXT_PUBLIC_ env var is an accepted simplification here,
+// not a security design -- this is explicitly a single-user project
+// (docs/01-PRD.md Open Assumption #5), and api/auth.py's own docstring
+// already calls this auth "minimal," not meant to resist a sophisticated
+// attacker.
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+
 export type EnhancementPreset = "gentle" | "balanced" | "strong" | "custom";
 
 export type JobStatus =
@@ -65,6 +73,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
       ...init?.headers,
     },
   });
@@ -99,5 +108,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 };
+
+// Mirrors api/models.py's can_cancel -- deliberately duplicated as two
+// tiny one-line checks in two languages rather than importing across the
+// Python/TS boundary.
+export function isCancellable(status: JobStatus): boolean {
+  return status === "queued" || status === "running";
+}
 
 export { ApiError };
