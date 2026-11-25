@@ -5,6 +5,7 @@ description = "Tiered DSP/AI enhancement pipeline for long-form narration, prese
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

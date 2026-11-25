@@ -23,7 +23,11 @@ from pathlib import Path
 import numpy as np
 
 from audiobook_engine.analysis.quality import analyze_quality
-from audiobook_engine.analysis.strategy import EnhancementTier, select_strategy
+from audiobook_engine.analysis.strategy import (
+    EnhancementTier,
+    resolve_effective_tier,
+    select_strategy,
+)
 from audiobook_engine.chunking.boundaries import ChunkBoundary, ChunkingConfig, plan_chunks
 from audiobook_engine.chunking.manifest import (
     ChunkManifest,
@@ -83,6 +87,7 @@ def run_job(
     model_path: Path | None = None,
     force_tier2: bool = False,
     tier2_venv_python: Path | None = None,
+    max_tier: EnhancementTier | None = None,
 ) -> ChunkManifest:
     """Run (or resume) a chunked enhancement job end-to-end.
 
@@ -93,6 +98,11 @@ def run_job(
     legacy venv (enhancement/resemble.py's ensure_resemble_enhance_env), so
     force_tier2=True requires tier2_venv_python to already point at that
     venv's python binary.
+
+    max_tier caps (never escalates) the tier select_strategy would
+    otherwise choose -- see analysis/strategy.py's resolve_effective_tier,
+    which this delegates to. Used by runner/poller.py to enforce a
+    submitted job's preset (config/presets.yaml's tier_max).
 
     Requires ffmpeg on PATH and network access to Neon Object Storage — run
     in Colab, not as part of the unit test suite.
@@ -156,7 +166,7 @@ def run_job(
         decision = select_strategy(report)
 
         processed_path = work_dir / chunk_filename(idx)
-        effective_tier = EnhancementTier.TIER_2_GPU_HEAVY if force_tier2 else decision.tier
+        effective_tier = resolve_effective_tier(decision.tier, force_tier2, max_tier)
 
         if effective_tier is EnhancementTier.TIER_2_GPU_HEAVY:
             run_tier2_processing(

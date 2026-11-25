@@ -90,3 +90,25 @@ def select_strategy(report: QualityReport) -> StrategyDecision:
         needs_loudness_normalization=report.is_loudness_inconsistent,
         needs_declipping=report.is_clipped,
     )
+
+
+def resolve_effective_tier(
+    decision_tier: EnhancementTier, force_tier2: bool, max_tier: EnhancementTier | None
+) -> EnhancementTier:
+    """Resolve the tier a chunk actually runs at (runner/job_runner.py's
+    run_job), given select_strategy's recommendation plus the two separate
+    ways a caller can override it.
+
+    force_tier2 (the existing explicit human opt-in, 07-Decisions.md) wins
+    outright, unchanged from before this function existed. Otherwise a
+    preset's tier_max (config/presets.yaml, config/presets.py) only ever
+    caps the tier DOWN, never escalates it — select_strategy already never
+    recommends Tier 2 on its own (this module's own docstring), so a
+    preset's tier_max=2 does not mean "always run Tier 2"; it just declines
+    to cap what select_strategy already decided.
+    """
+    if force_tier2:
+        return EnhancementTier.TIER_2_GPU_HEAVY
+    if max_tier is not None:
+        return min(decision_tier, max_tier)
+    return decision_tier

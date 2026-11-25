@@ -1,7 +1,11 @@
 import numpy as np
 
 from audiobook_engine.analysis.quality import analyze_quality
-from audiobook_engine.analysis.strategy import EnhancementTier, select_strategy
+from audiobook_engine.analysis.strategy import (
+    EnhancementTier,
+    resolve_effective_tier,
+    select_strategy,
+)
 
 SAMPLE_RATE = 16_000
 
@@ -49,3 +53,31 @@ def test_never_recommends_tier_2():
     report = analyze_quality(very_noisy, SAMPLE_RATE)
     decision = select_strategy(report)
     assert decision.tier <= EnhancementTier.TIER_1_LIGHT_AI
+
+
+def test_resolve_effective_tier_force_tier2_wins_regardless_of_max_tier():
+    result = resolve_effective_tier(
+        EnhancementTier.TIER_0_DSP_ONLY, force_tier2=True, max_tier=EnhancementTier.TIER_0_DSP_ONLY
+    )
+    assert result is EnhancementTier.TIER_2_GPU_HEAVY
+
+
+def test_resolve_effective_tier_no_cap_passes_through():
+    result = resolve_effective_tier(
+        EnhancementTier.TIER_1_LIGHT_AI, force_tier2=False, max_tier=None
+    )
+    assert result is EnhancementTier.TIER_1_LIGHT_AI
+
+
+def test_resolve_effective_tier_caps_down_to_max_tier():
+    result = resolve_effective_tier(
+        EnhancementTier.TIER_1_LIGHT_AI, force_tier2=False, max_tier=EnhancementTier.TIER_0_DSP_ONLY
+    )
+    assert result is EnhancementTier.TIER_0_DSP_ONLY
+
+
+def test_resolve_effective_tier_never_escalates_above_decision_tier():
+    result = resolve_effective_tier(
+        EnhancementTier.TIER_0_DSP_ONLY, force_tier2=False, max_tier=EnhancementTier.TIER_2_GPU_HEAVY
+    )
+    assert result is EnhancementTier.TIER_0_DSP_ONLY
