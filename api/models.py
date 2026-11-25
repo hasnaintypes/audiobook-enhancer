@@ -61,6 +61,12 @@ class Job(BaseModel):
     progress: int
     source_url: str = Field(alias="sourceUrl")
     preset: EnhancementPreset
+    # Not part of frontend/src/lib/api.ts's Job interface (that type only
+    # has it on JobSubmitRequest) -- added here as an extra, additive field
+    # so runner/poller.py can see what was actually requested when it
+    # claims a row. Harmless to existing frontend clients, which ignore
+    # unknown JSON fields.
+    add_music: bool = Field(default=False, alias="addMusic")
     error: str | None = None
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
@@ -74,6 +80,7 @@ class Job(BaseModel):
                 "progress": row["progress"],
                 "sourceUrl": row["source_url"],
                 "preset": row["preset"],
+                "addMusic": row["add_music"],
                 "error": row["error"],
                 "createdAt": row["created_at"],
                 "updatedAt": row["updated_at"],

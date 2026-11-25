@@ -34,6 +34,7 @@ class FakeJobStore:
             progress=0,
             sourceUrl=source_url,
             preset=preset,
+            addMusic=add_music,
             error=None,
             createdAt=now,
             updatedAt=now,

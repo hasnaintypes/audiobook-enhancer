@@ -91,3 +91,60 @@ class PostgresJobStore:
                 row = cur.fetchone()
                 conn.commit()
                 return Job.from_row(row) if row is not None else None
+
+    def claim_next_queued_job(self) -> Job | None:
+        """Atomically claim the oldest queued job (runner/poller.py).
+
+        FOR UPDATE SKIP LOCKED means a concurrent/crashed-and-restarted
+        poller can never double-claim the same row -- a second poller
+        running this same query simply skips any row already locked by the
+        first and claims the next one instead (or finds none).
+        """
+        with _get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs SET status = 'running', updated_at = now()
+                    WHERE id = (
+                        SELECT id FROM jobs
+                        WHERE status = 'queued'
+                        ORDER BY created_at
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    RETURNING *
+                    """
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return Job.from_row(row) if row is not None else None
+
+    def fail_job(self, job_id: UUID, error: str) -> Job | None:
+        with _get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs SET status = 'failed', error = %s, updated_at = now()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (error, str(job_id)),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return Job.from_row(row) if row is not None else None
+
+    def succeed_job(self, job_id: UUID) -> Job | None:
+        with _get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs SET status = 'succeeded', progress = 100, updated_at = now()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (str(job_id),),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return Job.from_row(row) if row is not None else None
